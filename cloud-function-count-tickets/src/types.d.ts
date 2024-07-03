@@ -6,8 +6,6 @@ export interface IGmailMessageWithContents extends gmail_v1.Schema$Message {
 
 export interface IParsedMessageData {
   messagedId?: string | null;
-  name: string;
-  location: string;
   ticketCount?: number;
   date?: Date;
   errors?: string[];

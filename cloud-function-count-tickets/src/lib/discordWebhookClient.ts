@@ -25,8 +25,6 @@ class DiscordWebhookClient {
       .setTitle(":money_mouth: New Ticket Sales! :money_mouth:")
       .addField("Date", latestSale.date.toLocaleString(), true)
       .addField("# Sold", latestSale.ticketCount.toString(), true)
-      .addField("Name", latestSale.name, true)
-      .addField("Location", latestSale.location, true)
       .setFooter(`TOTAL TICKETS SOLD: ${totalTickets} / 200`);
 
     return this.client.send(embed);
