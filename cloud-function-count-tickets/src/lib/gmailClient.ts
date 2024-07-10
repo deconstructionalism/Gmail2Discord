@@ -25,7 +25,6 @@ class GmailClient {
     this.client = google.gmail({ version: "v1", auth: client });
   };
 
-
   /**
    * Retrieves the ID of a Gmail label by its name.
    *
@@ -35,7 +34,6 @@ class GmailClient {
    */
   getLabelIdByName = async (labelName: string): Promise<string> => {
     try {
-
       // Retrieve a list of all Gmail labels
       const res = await this.client.users.labels.list({
         userId: "me",
@@ -55,6 +53,31 @@ class GmailClient {
   };
 
   /**
+   * Private helper method to retrieve a page of Gmail messages for a given label ID
+   * @param pageToken - The page token to retrieve the next page of messages.
+   * @param labelId - The ID of the Gmail label to retrieve messages for
+   * @returns - A list of Gmail messages and the next page token
+   */
+  #getMessagesForLabelIdPage = async (
+    pageToken: gmail_v1.Schema$ListMessagesResponse["nextPageToken"],
+    labelId: string
+  ): Promise<{
+    messages: gmail_v1.Schema$ListMessagesResponse["messages"];
+    nextPageToken: gmail_v1.Schema$ListMessagesResponse["nextPageToken"];
+  }> => {
+    const res = await this.client.users.messages.list({
+      userId: "me",
+      labelIds: [labelId],
+      pageToken: pageToken === null ? undefined : pageToken,
+    });
+
+    return {
+      messages: res.data.messages,
+      nextPageToken: res.data.nextPageToken,
+    };
+  };
+
+  /**
    * Retrieves a list of Gmail messages for a given label ID.
    *
    * If no messages are found for the provided label ID, an error is thrown.
@@ -65,19 +88,21 @@ class GmailClient {
     labelId: string
   ): Promise<gmail_v1.Schema$Message[]> => {
     try {
+      let allMessages: gmail_v1.Schema$Message[] = [];
+      let pageToken: string | null | undefined = null;
 
-      // Retrieve a list of messages for the provided label ID
-      const res = await this.client.users.messages.list({
-        userId: "me",
-        labelIds: [labelId],
-      });
-
-      const messages = res.data.messages;
+      // Retrieve all pages of messages for the label
+      while (pageToken !== undefined) {
+        const { messages = [], nextPageToken } =
+          await this.#getMessagesForLabelIdPage(pageToken, labelId);
+        pageToken = nextPageToken;
+        allMessages.push(...messages);
+      }
 
       // If no messages are found, throw an error
-      if (!messages) throw new Error("No messages found for label ID");
+      if (!allMessages) throw new Error("No messages found for label ID");
 
-      return messages;
+      return allMessages;
     } catch (error) {
       throw error;
     }
@@ -92,7 +117,6 @@ class GmailClient {
     messageId: gmail_v1.Schema$Message["id"]
   ): Promise<gmail_v1.Schema$Message> => {
     try {
-
       // Ensure a message ID is provided
       if (!messageId) throw new Error("No message ID provided");
 
