@@ -19,6 +19,14 @@ const DISCORD_WEBHOOK_URL = env
   .get("DISCORD_WEBHOOK_URL")
   .required()
   .asString();
+const STARTING_COUNT_OFFSET = env
+  .get("STARTING_COUNT_OFFSET")
+  .default("0")
+  .asInt();
+const TICKET_EVENT_NAME = env
+  .get("TICKET_EVENT_NAME")
+  .required()
+  .asString();
 
 cloudEvent(GCLOUD_FUNCTION_NAME, async () => {
   // Setup the Gmail client
@@ -45,7 +53,9 @@ cloudEvent(GCLOUD_FUNCTION_NAME, async () => {
   const { errors, sales } = splitErrorsFromSales(results);
 
   // Calculate the total number of tickets sold
-  const totalSold = sales.reduce((acc, sale) => acc + sale.ticketCount, 0);
+  const totalSold =
+    sales.reduce((acc, sale) => acc + sale.ticketCount, 0) +
+    STARTING_COUNT_OFFSET;
 
   // Log any errors during parsing
   errors.forEach((error) => {
@@ -61,7 +71,7 @@ cloudEvent(GCLOUD_FUNCTION_NAME, async () => {
 
   try {
     const discordClient = new DiscordWebhookClient(DISCORD_WEBHOOK_URL);
-    await discordClient.reportNewSales(totalSold, sales[0]);
+    await discordClient.reportNewSales(totalSold, TICKET_EVENT_NAME, sales[0]);
     console.log("Reported new sales to Discord");
     console.log({ totalSold, latestSale: sales[0] });
   } catch (error) {
