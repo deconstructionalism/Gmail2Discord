@@ -9,8 +9,11 @@
     "prestart": "npm run build",
     "gcp-build": "npm run build",
     "trigger-mock-event": "scripts/trigger-mock-cloud-event.sh",
+    "watch:setup": "ts-node scripts/setup-gmail-watch.ts",
+    "scheduler:setup": "scripts/setup-cloud-scheduler.sh",
     "env:list":  "scripts/generate-env-vars-for-deploy.sh",
-    "deploy": "npm run build && npm run env:list && gcloud functions deploy parseAndPushToDiscord --gen2 --runtime=nodejs20 --region=us-east1 --entry-point=parseAndPushToDiscord --trigger-topic=Gmail2Discord --env-vars-file .env.yaml"
+    "deploy": "npm run build && npm run env:list && gcloud functions deploy parseAndPushToDiscord --gen2 --runtime=nodejs20 --region=us-east1 --entry-point=parseAndPushToDiscord --trigger-topic=Gmail2Discord --env-vars-file .env.yaml",
+    "deploy:renew": "npm run build && npm run env:list && gcloud functions deploy renewGmailWatch --gen2 --runtime=nodejs20 --region=us-east1 --entry-point=renewGmailWatch --trigger-http --no-allow-unauthenticated --env-vars-file .env.yaml"
   },
   "keywords": [],
   "author": "",

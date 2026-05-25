@@ -1,11 +1,12 @@
 import env from "env-var";
 import { setupGmailClient } from "./lib/gmailClient";
-import { cloudEvent } from "@google-cloud/functions-framework";
+import { cloudEvent, http } from "@google-cloud/functions-framework";
 import { IGmailMessageWithContents } from "./types";
 import parseMessage from "./lib/parseMessage";
 import getMessageContents from "./lib/getMessageContents";
 import DiscordWebhookClient from "./lib/discordWebhookClient";
 import splitErrorsFromSales from "./lib/splitErrorsFromSales";
+import handleRenewGmailWatch from "./lib/renewGmailWatch";
 
 // Load environment variables
 require("dotenv").config();
@@ -27,6 +28,16 @@ const TICKET_EVENT_NAME = env
   .get("TICKET_EVENT_NAME")
   .required()
   .asString();
+
+// Renewal-only env vars. Read but not required at module load so this file
+// can be deployed as the parseAndPushToDiscord function without the renewal
+// config being present. The renewGmailWatch handler validates them itself.
+const GCLOUD_PROJECT_ID = env.get("GCLOUD_PROJECT_ID").asString();
+const GCLOUD_PUBSUB_TOPIC_NAME = env.get("GCLOUD_PUBSUB_TOPIC_NAME").asString();
+const WATCH_RENEWAL_START_DATE = env
+  .get("WATCH_RENEWAL_START_DATE")
+  .asString();
+const WATCH_RENEWAL_END_DATE = env.get("WATCH_RENEWAL_END_DATE").asString();
 
 cloudEvent(GCLOUD_FUNCTION_NAME, async () => {
   // Setup the Gmail client
@@ -78,4 +89,40 @@ cloudEvent(GCLOUD_FUNCTION_NAME, async () => {
     console.error("Error reporting sales to Discord");
     console.error(error);
   }
+});
+
+http("renewGmailWatch", (req, res) => {
+  // Validate renewal-only env vars at invocation time so the count-tickets
+  // function can be deployed without them.
+  if (
+    !GCLOUD_PROJECT_ID ||
+    !GCLOUD_PUBSUB_TOPIC_NAME ||
+    !WATCH_RENEWAL_START_DATE ||
+    !WATCH_RENEWAL_END_DATE
+  ) {
+    const missing = [
+      ["GCLOUD_PROJECT_ID", GCLOUD_PROJECT_ID],
+      ["GCLOUD_PUBSUB_TOPIC_NAME", GCLOUD_PUBSUB_TOPIC_NAME],
+      ["WATCH_RENEWAL_START_DATE", WATCH_RENEWAL_START_DATE],
+      ["WATCH_RENEWAL_END_DATE", WATCH_RENEWAL_END_DATE],
+    ]
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    const message = `Renewal env vars not configured: ${missing.join(", ")}`;
+    console.error(message);
+    res.status(500).json({ error: message });
+    return;
+  }
+
+  return handleRenewGmailWatch(
+    {
+      credentials: TOKEN,
+      labelName: GMAIL_LABEL_NAME,
+      topicName: `projects/${GCLOUD_PROJECT_ID}/topics/${GCLOUD_PUBSUB_TOPIC_NAME}`,
+      startDate: WATCH_RENEWAL_START_DATE,
+      endDate: WATCH_RENEWAL_END_DATE,
+    },
+    req,
+    res,
+  );
 });
