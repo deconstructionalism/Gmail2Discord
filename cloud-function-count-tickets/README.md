@@ -176,3 +176,72 @@ This project deploys two Cloud Functions from the same source:
    zone, or region by changing the tunables at the top of
    [`scripts/setup-cloud-scheduler.sh`](scripts/setup-cloud-scheduler.sh)
    and re-running the npm script.
+
+## Troubleshooting
+
+### `GaxiosError: invalid_grant` (`error_description: 'Bad Request'`)
+
+Both functions authenticate to Gmail with the OAuth refresh token stored
+in `GCLOUD_OAUTH2_TOKEN`. When the logs show `invalid_grant` on a
+`POST https://oauth2.googleapis.com/token` call, the deployed refresh
+token is no longer valid — this is **not** a code bug. The error usually
+surfaces in `renewGmailWatch` first (it's the function the daily
+scheduler fires), but `parseAndPushToDiscord` hits the same failure on
+its next invocation.
+
+The most common cause for this project is that the **OAuth consent screen
+is in "Testing" publishing status**, which expires refresh tokens after 7
+days. Other causes: the Gmail account password changed, the token was
+revoked, or there is a `client_id` / `client_secret` mismatch between the
+token and the OAuth client.
+
+Recovery (do all four steps — publishing without re-minting won't revive
+the dead token, and re-minting without publishing just hands you another
+7-day token):
+
+1. **Publish the OAuth app to production** so tokens stop expiring.
+   Google Cloud Console → **APIs & Services → OAuth consent screen**
+   (now under **Google Auth Platform → Audience**) → **Publish app** →
+   confirm. The publishing status should read **In production**. For a
+   personal single-user app on sensitive Gmail scopes you can ignore the
+   "unverified app" warning — publishing alone stops the 7-day expiry,
+   and the app is not listed or discoverable anywhere.
+
+2. **Mint a fresh refresh token** (the old one is dead and cannot be
+   reused):
+
+    ```bash
+    cd ../get-credentials
+    npm run get-creds   # browser flow → writes token.json
+    ```
+
+3. **Update `GCLOUD_OAUTH2_TOKEN`** in this directory's `.env` with the
+   full JSON object from the new `token.json`, on a single line:
+
+    ```text
+    GCLOUD_OAUTH2_TOKEN={"type":"authorized_user","client_id":"...","client_secret":"...","refresh_token":"..."}
+    ```
+
+4. **Redeploy both functions** so each Cloud Run revision picks up the
+   new token (the deploy scripts regenerate `.env.yaml` from `.env`):
+
+    ```bash
+    npm run deploy        # parseAndPushToDiscord
+    npm run deploy:renew  # renewGmailWatch
+    ```
+
+Then re-register the watch, since the previous one likely lapsed during
+the outage:
+
+```bash
+npm run watch:setup
+```
+
+To verify the fix, invoke the renewal function directly (it is deployed
+`--no-allow-unauthenticated`, so pass an identity token) and confirm the
+`invalid_grant` error is gone from the logs:
+
+```bash
+FN_URL=$(gcloud functions describe renewGmailWatch --gen2 --region=us-east1 --format='value(serviceConfig.uri)')
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" "$FN_URL"
+```
